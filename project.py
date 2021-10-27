@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 ##################################################################################################################
 #                                                   CREDITS                                                      #
 #                                                                                                                #
@@ -11,6 +13,7 @@ from moviepy.editor import AudioFileClip
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal
+import moviepy.editor as mp
 
 class Ui_MainWindow:
     """Main window GUI."""
@@ -120,23 +123,20 @@ class Ui_MainWindow:
         self.label_3.setText(_translate("MainWindow", "Output file name:"))
         self.label_5.setText(_translate("MainWindow", "Transcribed text:"))
         self.transcribe_button.setText(_translate("MainWindow", "Transcribe"))
-        self.output_file_name.setPlaceholderText(_translate("MainWindow", "interview1.txt"))
+        self.output_file_name.setPlaceholderText(_translate("MainWindow", "transcript.txt"))
         self.menuFile.setTitle(_translate("MainWindow", "File"))
         self.menuAbout.setTitle(_translate("MainWindow", "About"))
         self.actionOpen_mp4_video_recording.setText(_translate("MainWindow", "Open mp4 video recording"))
-        self.actionAbout_vid2text.setText(_translate("MainWindow", "About vid2text"))
+        self.actionAbout_vid2text.setText(_translate("MainWindow", "About this project"))
         self.actionNew.setText(_translate("MainWindow", "New"))
 
     def open_audio_file(self):
         """Open the audio (*.mp4) file."""
         file_name = QFileDialog.getOpenFileName()
-        if file_name[0][-3:] == "mp4":
-            self.transcribe_button.setEnabled(True)
-            self.mp4_file_name = file_name[0]
-            self.message_label.setText("")
-            self.selected_video_label.setText(file_name[0])
-        else:
-            self.message_label.setText("Please select an *.mp4 file")
+        self.transcribe_button.setEnabled(True)
+        self.mp4_file_name = file_name[0]
+        self.message_label.setText("")
+        self.selected_video_label.setText(file_name[0])
 
     def convert_mp4_to_wav(self):
         """Convert the mp4 video file into an audio file."""
@@ -207,8 +207,9 @@ class Ui_MainWindow:
     def show_about(self):
         """Show about message box."""
         msg = QMessageBox()
-        msg.setWindowTitle("About vid2speech")
-        msg.setText("Credits to Dr. Alan Davies,\n Senior Lecturer,\n Health Data Science,\n Manchester University, UK")
+        msg.setWindowTitle("About this Project")
+        msg.setText("The project has been created by Tirth Patel and Tirth Hihoriya\n"
+                    "Credits to Dr. Alan Davies for providing the code for the GUI")
         msg.setIcon(QMessageBox.Information)
         msg.exec_()
 
@@ -227,8 +228,10 @@ class convertVideoToAudioThread(QThread):
 
     def run(self):
         """Run video conversion task."""
-        audio_clip = AudioFileClip(self.mp4_file_name)
-        audio_clip.write_audiofile(self.audio_file)
+        # audio_clip = AudioFileClip(self.mp4_file_name)
+        # audio_clip.write_audiofile(self.audio_file)
+        my_clip = mp.VideoFileClip(self.mp4_file_name)
+        my_clip.audio.write_audiofile(self.audio_file)
 
 class transcriptionThread(QThread):
     """Thread to transcribe file from audio to text."""
@@ -248,19 +251,67 @@ class transcriptionThread(QThread):
 
     def run(self):
         """Run transcription, audio to text."""
+        # r = sr.Recognizer()
+        # for i in range(0, self.total_duration):
+        #     try:
+        #         with sr.AudioFile(self.audio_file) as source:
+        #             audio = r.record(source, offset=i*10, duration=10)
+        #             f = open(self.output_file, "a")
+        #             f.write(r.recognize_google(audio))
+        #             f.write(" ")
+        #         self.change_value.emit(i)
+        #     except:
+        #         print("Unknown word detected...")
+        #         continue
+        #     f.close()
+        import os
+        import shutil
+
+        from pydub import AudioSegment
+        from pydub.silence import split_on_silence
+
+        def match_target_amplitude(sound, target_dBFS):
+            change_in_dBFS = target_dBFS - sound.dBFS
+            return sound.apply_gain(change_in_dBFS)
+
+        if os.path.exists('result'):
+            shutil.rmtree('result')
+        os.mkdir('result')
+
+        sound = AudioSegment.from_wav(self.audio_file)
+        normalized_sound = match_target_amplitude(sound, -20.0)
+        chunks = split_on_silence(normalized_sound, min_silence_len=500, silence_thresh=-30)
+        for i, chunk in enumerate(chunks):
+            fullPath = "result/speech_{number}_{length}.wav".format(number=i+1, length=len(chunk))
+            chunk.export(fullPath, format="wav")
+
+        import speech_recognition as sr
+
+        offset = 0
+        times = []
+
+        audio_files = os.listdir("result")
+        audio_files = sorted([file_ for file_ in audio_files if file_.endswith(".wav")])
         r = sr.Recognizer()
-        for i in range(0, self.total_duration):
+        of = open(self.output_file, "w")
+        for i, audioname in enumerate(audio_files):
+            audio = sr.AudioFile(os.path.join("result", audioname))
             try:
-                with sr.AudioFile(self.audio_file) as source:
-                    audio = r.record(source, offset=i*10, duration=10)
-                    f = open(self.output_file, "a")
-                    f.write(r.recognize_google(audio))
-                    f.write(" ")
+                with audio as source:
+                    audio_file = r.record(source)
+                result = r.recognize_google(audio_file)
+                times.append(offset)
+                # exporting the result
+                of.write(f"Time: {times[-1]//1000} => ")
+                of.write("Recognized Speech: ")
+                of.write(result)
+                of.write("\n")
+            except sr.UnknownValueError:
+                pass
+            finally:
+                offset += len(chunks[i])
                 self.change_value.emit(i)
-            except:
-                print("Unknown word detected...")
-                continue
-            f.close()
+        of.close()
 
 if __name__ == "__main__":
     import sys
