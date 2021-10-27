@@ -280,7 +280,7 @@ class transcriptionThread(QThread):
 
         sound = AudioSegment.from_wav(self.audio_file)
         normalized_sound = match_target_amplitude(sound, -20.0)
-        chunks = split_on_silence(normalized_sound, min_silence_len=500, silence_thresh=-30)
+        chunks = split_on_silence(normalized_sound, min_silence_len=1000, silence_thresh=-30)
         for i, chunk in enumerate(chunks):
             fullPath = "result/speech_{number}_{length}.wav".format(number=i+1, length=len(chunk))
             chunk.export(fullPath, format="wav")
@@ -302,7 +302,7 @@ class transcriptionThread(QThread):
                 result = r.recognize_google(audio_file)
                 times.append(offset)
                 # exporting the result
-                of.write(f"Time: {times[-1]//1000} => ")
+                of.write(f"Time: {str(times[-1]//60000).zfill(2)}:{str((times[-1]//1000) - (times[-1]//60000)*60).zfill(2)} => ")
                 of.write("Recognized Speech: ")
                 of.write(result)
                 of.write("\n")
